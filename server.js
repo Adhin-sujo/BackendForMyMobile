@@ -1,48 +1,49 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
+require('dotenv').config();
 
 const app = express();
 app.use(bodyParser.json());
 
-// Initialize SQLite DB
-const dbPath = path.join(__dirname, 'emails.db');
-const db = new sqlite3.Database(dbPath);
-
-// Create table if it doesn't exist
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS emails (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT NOT NULL
-    )
-  `);
+// PostgreSQL config using environment variable
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
-// Save email (POST)
-app.post('/save-email', (req, res) => {
+// Create table if not exists
+pool.query(`
+  CREATE TABLE IF NOT EXISTS emails (
+    id SERIAL PRIMARY KEY,
+    email TEXT NOT NULL
+  );
+`);
+
+app.post('/save-email', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: 'Email is required' });
 
-  const stmt = db.prepare('INSERT INTO emails (email) VALUES (?)');
-  stmt.run(email, function (err) {
-    if (err) return res.status(500).json({ message: 'Failed to save email' });
-    res.json({ message: 'Email saved successfully', id: this.lastID });
-  });
-  stmt.finalize();
+  try {
+    await pool.query('INSERT INTO emails (email) VALUES ($1)', [email]);
+    res.json({ message: 'Email saved successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to save email' });
+  }
 });
 
-// Get all emails (GET)
-app.get('/emails', (req, res) => {
-  db.all('SELECT email FROM emails ORDER BY id DESC', (err, rows) => {
-    if (err) return res.status(500).json({ message: 'Failed to retrieve emails' });
-    res.json(rows);
-  });
+app.get('/emails', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT email FROM emails ORDER BY id DESC');
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to retrieve emails' });
+  }
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
