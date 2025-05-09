@@ -14,6 +14,21 @@ if (!fs.existsSync(csvFile)) {
   fs.writeFileSync(csvFile, 'email\n', 'utf8');
 }
 
+app.get('/emails', (req, res) => {
+  fs.readFile(csvFile, 'utf8', (err, data) => {
+    if (err) return res.status(500).json({ message: 'Failed to read emails' });
+
+    const emails = data
+      .trim()
+      .split('\n')
+      .slice(1) // Skip header row
+      .filter((line) => line) // Ignore empty lines
+      .map((email) => ({ email }));
+
+    res.json(emails);
+  });
+});
+
 app.post('/save-email', (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ message: 'Email is required' });
